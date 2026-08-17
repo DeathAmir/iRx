@@ -1,3 +1,7 @@
+#ifndef ACAC
+#define ACAC 1
+#endif
+
 inline bool is_lagging(client *cl)
 {
     return ( cl->spj > 50 || cl->ping > 500 || cl->ldt > 80 ); // do not change this except if you really know what are you doing
@@ -83,4 +87,3 @@ inline int check_pdist(client *c, float & dist) // pick up distance
     }
     return 0;
 }
-
