@@ -93,6 +93,7 @@ jobs:
           set -e
           sed -i 's@//#define PRODUCTION@#define PRODUCTION@' source/src/cube.h
           cd source/src
+          sed -i 's/ -rdynamic//g' Makefile
           make clean
           make -j2 CXX=g++ \
             CLIENT_LIBS='-mwindows -L../enet/.libs -lenet -lmingw32 -lSDL2main -lSDL2 -lSDL2_image -lz -lopengl32 -lopenal -lvorbisfile -lws2_32 -lwinmm' \
