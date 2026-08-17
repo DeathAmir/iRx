@@ -62,17 +62,17 @@ extern int hwtexsize, hwmaxaniso;
 extern int maploaded, msctrl;
 extern float waterlevel;
 
-#define AC_MASTER_URI "ms.cubers.net"
+#define AC_MASTER_URI "irautox.ir"
 
 // uncomment this line for production release
 //#define PRODUCTION
 
 #ifdef PRODUCTION
 	#define AC_VERSION 1302
-	#define AC_MASTER_PORT 28760
+	#define AC_MASTER_PORT 7575
 #else
 	#define AC_VERSION -(1302)
-	#define AC_MASTER_PORT 28758
+	#define AC_MASTER_PORT 7575
 #endif
 
 #define MAXCLIENTSONMASTER 16           // FIXME
@@ -85,4 +85,3 @@ extern float waterlevel;
 #include "protos.h"                     // external function decls
 
 #endif
-
