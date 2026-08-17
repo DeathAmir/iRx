@@ -17,7 +17,7 @@ jobs:
         run: |
           python3 -m py_compile master_server/server.py tools/cubescript_obf.py tools/server_content_cache.py tools/discord_rpc.py tools/xp_tool.py tools/apply_irx_shooter_patch.py
           python3 tools/cubescript_obf.py config/irx_modern.cfg -o /tmp/irx_modern.min.cfg
-          python3 tools/xp_tool.py --db /tmp/irx-xp.db award ci-player 250 build-test
+          python3 tools/xp_tool.py --db /tmp/irx-xp.db award ci-player 250 --reason build-test --name CI
           python3 tools/xp_tool.py --db /tmp/irx-xp.db profile ci-player
       - name: Validate native iRx Shooter patchset
         run: |
