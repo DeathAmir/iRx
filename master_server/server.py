@@ -5,8 +5,6 @@ import hmac
 import ipaddress
 import logging
 import os
-import secrets
-import signal
 import time
 from dataclasses import dataclass, field
 from typing import Dict, Optional, Tuple
@@ -232,7 +230,11 @@ class MasterServer:
                     writer.write(self.server_list_payload())
                     await writer.drain()
                     break
-                if cmd == "regserv" and len(parts) == 2:
+                # Native iRx sends: regserv <port> <description>-<key> <version>.
+                # As in the original C++ master, only the first numeric argument
+                # is authoritative; all registration identity comes from peer IP
+                # plus the UDP reachability check.
+                if cmd == "regserv" and len(parts) >= 2:
                     try:
                         port = int(parts[1])
                     except ValueError:
