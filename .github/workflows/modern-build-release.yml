@@ -126,11 +126,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: '11'
-      - name: Prepare official AssaultCube mobile scaffold
+          java-version: '17'
+      - name: Prepare iRx Shooter Android scaffold on desktop protocol
         run: |
           set -e
           git clone --depth 1 --branch acmobile https://github.com/assaultcube/AC.git /tmp/acmobile
@@ -140,11 +140,16 @@ jobs:
           rsync -a --ignore-existing /tmp/acmobile/source/include/ source/include/
           python3 tools/apply_irx_shooter_patch.py --root .
           find source/android -type f \( -name '*.xml' -o -name '*.gradle' -o -name '*.java' -o -name '*.cpp' \) -print0 | xargs -0 sed -i 's/AssaultCube/iRx Shooter/g'
-          sed -i 's/assaultcube/irxshooter/g' source/android/app/build.gradle || true
-      - name: Install Android NDK
+          sed -i 's/net.cubers.assaultcube/net.irautox.irxshooter/g' source/android/app/build.gradle || true
+          printf 'sdk.dir=%s\n' "$ANDROID_SDK_ROOT" > source/android/local.properties
+      - name: Install Android SDK, NDK and CMake
         run: |
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'ndk;21.4.7075529' 'cmake;3.10.2.4988404' 'platforms;android-30' 'build-tools;30.0.3'
+          yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" 'ndk;21.3.6528147' 'cmake;3.10.2.4988404' 'platforms;android-30' 'build-tools;30.0.3'
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '11'
       - name: Copy complete mobile assets
         run: |
           cd source/android
@@ -152,7 +157,7 @@ jobs:
           mkdir -p app/src/main/assets
           bash copyassets.sh
           cd ../..
-      - name: Build installable Android APK
+      - name: Build installable universal Android APK
         run: |
           cd source/android
           chmod +x gradlew
@@ -161,11 +166,11 @@ jobs:
       - name: Package Android APK
         run: |
           mkdir -p dist
-          cp source/android/app/build/outputs/apk/debug/app-debug.apk dist/iRx-Shooter-Android-armv7.apk
+          cp source/android/app/build/outputs/apk/debug/app-debug.apk dist/iRx-Shooter-Android-universal.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: iRx-Shooter-Android-armv7
-          path: dist/iRx-Shooter-Android-armv7.apk
+          name: iRx-Shooter-Android-universal
+          path: dist/iRx-Shooter-Android-universal.apk
 
   release:
     if: github.event_name == 'push'
@@ -189,7 +194,7 @@ jobs:
             if gh release create "$TAG" \
               dist/iRx-Shooter-Linux-x64.zip \
               dist/iRx-Shooter-Windows-x64.zip \
-              dist/iRx-Shooter-Android-armv7.apk \
+              dist/iRx-Shooter-Android-universal.apk \
               --target "$GITHUB_SHA" \
               --title "iRx Shooter ${SHORT_SHA}" \
               --notes "iRx Shooter multi-platform release. Protocol 1301 Windows/Android cross-play, server-authoritative smoke grenade pickup/throw validation, full runtime assets, competitive HUD/ADS, material-aware 3D footsteps, confirmed kill effects, hardened anti-cheat, Discord RPC and irautox.ir:7575 master routing."; then
