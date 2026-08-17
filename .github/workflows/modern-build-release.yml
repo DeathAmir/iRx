@@ -1,0 +1,73 @@
+name: iRx modern build and release
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Python tools
+        run: |
+          python3 -m py_compile master_server/server.py tools/cubescript_obf.py tools/server_content_cache.py tools/discord_rpc.py
+          python3 tools/cubescript_obf.py config/irx_modern.cfg -o /tmp/irx_modern.min.cfg
+
+  linux64:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsdl2-dev libsdl2-image-dev zlib1g-dev libogg-dev libvorbis-dev libopenal-dev libcurl4-openssl-dev zip
+      - name: Enable production build
+        run: sed -i 's@//#define PRODUCTION@#define PRODUCTION@' source/src/cube.h
+      - name: Build client and server
+        run: |
+          cd source/src
+          make clean
+          make -j2
+          make install
+          cd ../..
+      - name: Package release
+        run: |
+          set -e
+          mkdir -p dist/irx-modern-linux64
+          cp bin_unix/native_client dist/irx-modern-linux64/irx_client
+          cp bin_unix/native_server dist/irx-modern-linux64/irx_server
+          cp -r config dist/irx-modern-linux64/config
+          cp -r master_server dist/irx-modern-linux64/master_server
+          cp -r tools dist/irx-modern-linux64/tools
+          cp README.md dist/irx-modern-linux64/ || true
+          chmod 750 dist/irx-modern-linux64/irx_client dist/irx-modern-linux64/irx_server
+          cd dist
+          zip -qr irx-modern-linux64.zip irx-modern-linux64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: irx-modern-linux64
+          path: dist/irx-modern-linux64.zip
+
+  release:
+    if: github.event_name == 'push'
+    needs: linux64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: irx-modern-linux64
+          path: dist
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          TAG="modern-${GITHUB_RUN_NUMBER}-${SHORT_SHA}"
+          gh release create "$TAG" dist/irx-modern-linux64.zip --target "$GITHUB_SHA" --title "iRx Modern ${SHORT_SHA}" --notes "Automated iRx modernization build: all-weapon ADS config, server-side anti-cheat hook, hardened Python master server on port 7575, Discord RPC bridge, safe per-server content cache, and CubeScript minifier/obfuscator."
