@@ -1,4 +1,4 @@
-name: iRx modern build and release
+name: iRx Shooter multi-platform build and release
 
 on:
   push:
@@ -15,16 +15,24 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate Python tools
         run: |
-          python3 -m py_compile master_server/server.py tools/cubescript_obf.py tools/server_content_cache.py tools/discord_rpc.py tools/xp_tool.py
+          python3 -m py_compile master_server/server.py tools/cubescript_obf.py tools/server_content_cache.py tools/discord_rpc.py tools/xp_tool.py tools/apply_irx_shooter_patch.py
           python3 tools/cubescript_obf.py config/irx_modern.cfg -o /tmp/irx_modern.min.cfg
-          python3 tools/xp_tool.py --db /tmp/irx-xp.sqlite3 award ci-player 500 --reason ci --name CI >/tmp/xp.json
-          python3 tools/xp_tool.py --db /tmp/irx-xp.sqlite3 profile ci-player
+          python3 tools/xp_tool.py --db /tmp/irx-xp.db award ci-player 250 build-test
+          python3 tools/xp_tool.py --db /tmp/irx-xp.db profile ci-player
+      - name: Validate native iRx Shooter patchset
+        run: |
+          python3 tools/apply_irx_shooter_patch.py --root .
+          grep -q 'PROTOCOL_VERSION 1301' source/src/protocol.h
+          grep -q 'SV_IRX_SMOKE_THROW' source/src/server.cpp
+          grep -q 'IRX_SHOOTER_PATCH_V3' source/src/weapon.cpp
 
   linux64:
     needs: validate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Apply iRx Shooter native patchset
+        run: python3 tools/apply_irx_shooter_patch.py --root .
       - name: Install build dependencies
         run: |
           sudo apt-get update
@@ -38,38 +46,155 @@ jobs:
           make -j2
           make install
           cd ../..
-      - name: Package release
+      - name: Package full Linux runtime
         run: |
           set -e
-          mkdir -p dist/irx-modern-linux64
-          cp bin_unix/native_client dist/irx-modern-linux64/irx_client
-          cp bin_unix/native_server dist/irx-modern-linux64/irx_server
-          cp -r config dist/irx-modern-linux64/config
-          cp -r master_server dist/irx-modern-linux64/master_server
-          cp -r tools dist/irx-modern-linux64/tools
-          cp README.md dist/irx-modern-linux64/ || true
-          chmod 750 dist/irx-modern-linux64/irx_client dist/irx-modern-linux64/irx_server
+          OUT=dist/iRx-Shooter-Linux-x64
+          mkdir -p "$OUT"
+          cp bin_unix/native_client "$OUT/iRx-Shooter"
+          cp bin_unix/native_server "$OUT/iRx-Shooter-Server"
+          for d in config packages bot docs mods locale demos; do [ ! -d "$d" ] || cp -r "$d" "$OUT/"; done
+          cp -r master_server tools "$OUT/"
+          for f in README* LICENSE* *.sh; do [ ! -f "$f" ] || cp "$f" "$OUT/"; done
+          chmod 750 "$OUT/iRx-Shooter" "$OUT/iRx-Shooter-Server"
           cd dist
-          zip -qr irx-modern-linux64.zip irx-modern-linux64
+          zip -qr iRx-Shooter-Linux-x64.zip iRx-Shooter-Linux-x64
       - uses: actions/upload-artifact@v4
         with:
-          name: irx-modern-linux64
-          path: dist/irx-modern-linux64.zip
+          name: iRx-Shooter-Linux-x64
+          path: dist/iRx-Shooter-Linux-x64.zip
+
+  windows64:
+    needs: validate
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply iRx Shooter native patchset
+        run: python tools/apply_irx_shooter_patch.py --root .
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            make
+            autoconf
+            automake
+            libtool
+            zip
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-SDL2
+            mingw-w64-x86_64-SDL2_image
+            mingw-w64-x86_64-openal
+            mingw-w64-x86_64-libvorbis
+            mingw-w64-x86_64-zlib
+      - name: Build Windows x64 client and server
+        shell: msys2 {0}
+        run: |
+          set -e
+          sed -i 's@//#define PRODUCTION@#define PRODUCTION@' source/src/cube.h
+          cd source/src
+          make clean
+          make -j2 CXX=g++ \
+            CLIENT_LIBS='-mwindows -L../enet/.libs -lenet -lmingw32 -lSDL2main -lSDL2 -lSDL2_image -lz -lopengl32 -lopenal -lvorbisfile -lws2_32 -lwinmm' \
+            SERVER_LIBS='-L../enet/.libs -lenet -lz -lws2_32 -lwinmm'
+          cd ../..
+      - name: Package full Windows runtime and DLLs
+        shell: msys2 {0}
+        run: |
+          set -e
+          OUT=dist/iRx-Shooter-Windows-x64
+          mkdir -p "$OUT"
+          cp bin_win32/ac_client.exe "$OUT/iRx-Shooter.exe"
+          cp bin_win32/ac_server.exe "$OUT/iRx-Shooter-Server.exe"
+          for exe in bin_win32/ac_client.exe bin_win32/ac_server.exe; do
+            ldd "$exe" | awk '{for(i=1;i<=NF;i++) if($i ~ /^\/.*\.dll$/) print $i}' | sort -u | while read dll; do
+              [ ! -f "$dll" ] || cp -n "$dll" "$OUT/"
+            done
+          done
+          for d in config packages bot docs mods locale demos; do [ ! -d "$d" ] || cp -r "$d" "$OUT/"; done
+          cp -r master_server tools "$OUT/"
+          for f in README* LICENSE* *.bat; do [ ! -f "$f" ] || cp "$f" "$OUT/"; done
+          cd dist
+          zip -qr iRx-Shooter-Windows-x64.zip iRx-Shooter-Windows-x64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: iRx-Shooter-Windows-x64
+          path: dist/iRx-Shooter-Windows-x64.zip
+
+  android:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '11'
+      - name: Prepare official AssaultCube mobile scaffold
+        run: |
+          set -e
+          git clone --depth 1 --branch acmobile https://github.com/assaultcube/AC.git /tmp/acmobile
+          rm -rf source/android source/src/touch
+          cp -r /tmp/acmobile/source/android source/android
+          cp -r /tmp/acmobile/source/src/touch source/src/touch
+          rsync -a --ignore-existing /tmp/acmobile/source/include/ source/include/
+          python3 tools/apply_irx_shooter_patch.py --root .
+          find source/android -type f \( -name '*.xml' -o -name '*.gradle' -o -name '*.java' -o -name '*.cpp' \) -print0 | xargs -0 sed -i 's/AssaultCube/iRx Shooter/g'
+          sed -i 's/assaultcube/irxshooter/g' source/android/app/build.gradle || true
+      - name: Install Android NDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'ndk;21.4.7075529' 'cmake;3.10.2.4988404' 'platforms;android-30' 'build-tools;30.0.3'
+      - name: Copy complete mobile assets
+        run: |
+          cd source/android
+          rm -rf app/src/main/assets
+          mkdir -p app/src/main/assets
+          bash copyassets.sh
+          cd ../..
+      - name: Build installable Android APK
+        run: |
+          cd source/android
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleDebug
+          cd ../..
+      - name: Package Android APK
+        run: |
+          mkdir -p dist
+          cp source/android/app/build/outputs/apk/debug/app-debug.apk dist/iRx-Shooter-Android-armv7.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: iRx-Shooter-Android-armv7
+          path: dist/iRx-Shooter-Android-armv7.apk
 
   release:
     if: github.event_name == 'push'
-    needs: linux64
+    needs: [linux64, windows64, android]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: irx-modern-linux64
+          pattern: iRx-Shooter-*
           path: dist
-      - name: Create GitHub release
+          merge-multiple: true
+      - name: Create multi-platform GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -e
           SHORT_SHA="${GITHUB_SHA::7}"
-          TAG="modern-${GITHUB_RUN_NUMBER}-${SHORT_SHA}"
-          gh release create "$TAG" dist/irx-modern-linux64.zip --target "$GITHUB_SHA" --title "iRx Modern ${SHORT_SHA}" --notes "Automated iRx modernization build. Includes all-weapon right-click ADS, competitive HUD preset and hit feedback defaults, server-side ACAC validation hooks, irautox.ir:7575 master routing and hardened Python master server, Discord RPC bridge for app 1534574125790658722, safe per-server content cache, CubeScript minifier/obfuscator, and SQLite XP progression tooling."
+          TAG="shooter-${GITHUB_RUN_NUMBER}-${SHORT_SHA}"
+          for attempt in 1 2 3 4 5; do
+            if gh release create "$TAG" \
+              dist/iRx-Shooter-Linux-x64.zip \
+              dist/iRx-Shooter-Windows-x64.zip \
+              dist/iRx-Shooter-Android-armv7.apk \
+              --target "$GITHUB_SHA" \
+              --title "iRx Shooter ${SHORT_SHA}" \
+              --notes "iRx Shooter multi-platform release. Protocol 1301 Windows/Android cross-play, server-authoritative smoke grenade pickup/throw validation, full runtime assets, competitive HUD/ADS, material-aware 3D footsteps, confirmed kill effects, hardened anti-cheat, Discord RPC and irautox.ir:7575 master routing."; then
+              exit 0
+            fi
+            sleep $((attempt * 5))
+          done
+          exit 1
